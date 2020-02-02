@@ -704,6 +704,7 @@ Error Profiler::start(Arguments& args, bool reset) {
     }
 
     _threads = args._threads && args._output != OUTPUT_JFR;
+    _thread_filter.init(args._filter);
 
     if (args._output == OUTPUT_JFR) {
         error = _jfr.start(args._file);

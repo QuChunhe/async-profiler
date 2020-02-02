@@ -85,22 +85,22 @@ int OS::threadId() {
     return syscall(__NR_gettid);
 }
 
-bool OS::isThreadRunning(int thread_id) {
+ThreadState OS::threadState(int thread_id) {
     char buf[512];
     sprintf(buf, "/proc/self/task/%d/stat", thread_id);
     int fd = open(buf, O_RDONLY);
     if (fd == -1) {
-        return false;
+        return THREAD_INVALID;
     }
 
-    bool running = false;
+    ThreadState state = THREAD_INVALID;
     if (read(fd, buf, sizeof(buf)) > 0) {
         char* s = strchr(buf, ')');
-        running = s != NULL && (s[2] == 'R' || s[2] == 'D');
+        state = s != NULL && (s[2] == 'R' || s[2] == 'D') ? THREAD_RUNNING : THREAD_SLEEPING;
     }
 
     close(fd);
-    return running;
+    return state;
 }
 
 bool OS::isSignalSafeTLS() {
@@ -120,10 +120,10 @@ void OS::installSignalHandler(int signo, void (*handler)(int, siginfo_t*, void*)
     sigaction(signo, &sa, NULL);
 }
 
-void OS::sendSignalToThread(int thread_id, int signo) {
+bool OS::sendSignalToThread(int thread_id, int signo) {
     static const int self_pid = getpid();
 
-    syscall(__NR_tgkill, self_pid, thread_id, signo);
+    return syscall(__NR_tgkill, self_pid, thread_id, signo) == 0;
 }
 
 ThreadList* OS::listThreads() {

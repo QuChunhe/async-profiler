@@ -22,11 +22,12 @@
 #include <time.h>
 #include "arch.h"
 #include "arguments.h"
+#include "codeCache.h"
 #include "engine.h"
 #include "flightRecorder.h"
 #include "mutex.h"
 #include "spinLock.h"
-#include "codeCache.h"
+#include "threadFilter.h"
 #include "vmEntry.h"
 
 
@@ -98,6 +99,7 @@ class Profiler {
     State _state;
     Mutex _thread_names_lock;
     std::map<int, std::string> _thread_names;
+    ThreadFilter _thread_filter;
     FlightRecorder _jfr;
     Engine* _engine;
     time_t _start_time;
@@ -173,6 +175,7 @@ class Profiler {
 
     Profiler() :
         _state(IDLE),
+        _thread_filter(),
         _jfr(),
         _frame_buffer(NULL),
         _frame_buffer_size(0),
@@ -197,6 +200,10 @@ class Profiler {
     time_t uptime()     { return time(NULL) - _start_time; }
 
     NativeCodeCache* jvmLibrary() { return _libjvm; }
+
+    ThreadFilter* filter() {
+        return _thread_filter.enabled() ? &_thread_filter : NULL;
+    }
 
     void run(Arguments& args);
     void runInternal(Arguments& args, std::ostream& out);

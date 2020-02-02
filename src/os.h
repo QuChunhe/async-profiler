@@ -21,6 +21,13 @@
 #include "arch.h"
 
 
+enum ThreadState {
+    THREAD_INVALID,
+    THREAD_RUNNING,
+    THREAD_SLEEPING
+};
+
+
 class ThreadList {
   public:
     virtual ~ThreadList() {}
@@ -35,11 +42,11 @@ class OS {
     static u64 hton64(u64 x);
     static u64 ntoh64(u64 x);
     static int threadId();
-    static bool isThreadRunning(int thread_id);
+    static ThreadState threadState(int thread_id);
     static bool isSignalSafeTLS();
     static bool isJavaLibraryVisible();
     static void installSignalHandler(int signo, void (*handler)(int, siginfo_t*, void*));
-    static void sendSignalToThread(int thread_id, int signo);
+    static bool sendSignalToThread(int thread_id, int signo);
     static ThreadList* listThreads();
 };
 

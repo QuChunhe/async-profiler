@@ -82,13 +82,13 @@ int OS::threadId() {
     return (int)port;
 }
 
-bool OS::isThreadRunning(int thread_id) {
+ThreadState OS::threadState(int thread_id) {
     struct thread_basic_info info;
     mach_msg_type_number_t size = sizeof(info);
     if (thread_info((thread_act_t)thread_id, THREAD_BASIC_INFO, (thread_info_t)&info, &size) != 0) {
-        return false;
+        return THREAD_INVALID;
     }
-    return info.run_state == TH_STATE_RUNNING;
+    return info.run_state == TH_STATE_RUNNING ? THREAD_RUNNING : THREAD_SLEEPING;
 }
 
 bool OS::isSignalSafeTLS() {
@@ -108,8 +108,13 @@ void OS::installSignalHandler(int signo, void (*handler)(int, siginfo_t*, void*)
     sigaction(signo, &sa, NULL);
 }
 
-void OS::sendSignalToThread(int thread_id, int signo) {
-   asm volatile("syscall" : : "a"(0x2000148), "D"(thread_id), "S"(signo));
+bool OS::sendSignalToThread(int thread_id, int signo) {
+   int result;
+   asm volatile("syscall"
+                : "=a" (result)
+                : "a" (0x2000148), "D" (thread_id), "S" (signo)
+                : "rcx", "r11", "memory");
+   return result == 0;
 }
 
 ThreadList* OS::listThreads() {

@@ -51,6 +51,7 @@ Error WallClock::start(Arguments& args) {
     _interval = args._interval ? args._interval : DEFAULT_INTERVAL;
     _sample_idle_threads = strcmp(args._event, EVENT_WALL) == 0;
 
+    OS::installSignalHandler(SIGVTALRM, signalHandler);
     OS::installSignalHandler(SIGPROF, signalHandler);
 
     if (pipe(_pipefd) != 0) {
@@ -80,7 +81,9 @@ void WallClock::timerLoop() {
     ThreadList* thread_list = NULL;
 
     int self = OS::threadId();
+    ThreadFilter* thread_filter = Profiler::_instance.filter();
     bool sample_idle_threads = _sample_idle_threads;
+
     struct pollfd fds = {_pipefd[0], POLLIN, 0};
     int timeout = _interval > 1000000 ? (int)(_interval / 1000000) : 1;
 
@@ -96,9 +99,16 @@ void WallClock::timerLoop() {
                 thread_list = NULL;
                 break;
             }
-            if (thread_id != self && (sample_idle_threads || OS::isThreadRunning(thread_id))) {
-                OS::sendSignalToThread(thread_id, SIGPROF);
-                count++;
+
+            if (thread_id == self || !(thread_filter == NULL || thread_filter->accept(thread_id))) {
+                continue;
+            }
+
+            ThreadState state = OS::threadState(thread_id);
+            if (state == THREAD_RUNNING) {
+                if (OS::sendSignalToThread(thread_id, SIGPROF)) count++;
+            } else if (state == THREAD_SLEEPING && sample_idle_threads) {
+                if (OS::sendSignalToThread(thread_id, SIGVTALRM)) count++;
             }
         }
     }
