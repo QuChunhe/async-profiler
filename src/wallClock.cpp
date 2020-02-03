@@ -15,18 +15,26 @@
  */
 
 #include <errno.h>
-#include <poll.h>
-#include <string.h>
 #include <signal.h>
-#include <sys/types.h>
+#include <string.h>
+#include <time.h>
 #include <unistd.h>
+#include <sys/types.h>
 #include "wallClock.h"
 #include "os.h"
 #include "profiler.h"
 #include "stackFrame.h"
 
 
+// Maximum number of threads sampled in one iteration. This limit serves as a throttle
+// when generating profiling signals. Otherwise applications with too many threads may
+// suffer from a big profiling overhead. Also, keeping this limit low enough helps
+// to avoid contention on a spin lock inside Profiler::recordSample().
 const int THREADS_PER_TICK = 8;
+
+// Stop profiling thread with this signal. The same signal is used inside JDK to interrupt I/O operations.
+const int WAKEUP_SIGNAL = SIGIO;
+
 
 long WallClock::_interval;
 bool WallClock::_sample_idle_threads;
@@ -44,6 +52,10 @@ void WallClock::signalHandler(int signo, siginfo_t* siginfo, void* ucontext) {
     Profiler::_instance.recordSample(ucontext, _interval, 0, NULL);
 }
 
+void WallClock::wakeupHandler(int signo) {
+    // Dummy handler for interrupting syscalls
+}
+
 Error WallClock::start(Arguments& args) {
     if (args._interval < 0) {
         return Error("interval must be positive");
@@ -53,14 +65,11 @@ Error WallClock::start(Arguments& args) {
 
     OS::installSignalHandler(SIGVTALRM, signalHandler);
     OS::installSignalHandler(SIGPROF, signalHandler);
+    OS::installSignalHandler(WAKEUP_SIGNAL, NULL, wakeupHandler);
 
-    if (pipe(_pipefd) != 0) {
-        return Error("Unable to create poll pipe");
-    }
+    _running = true;
 
     if (pthread_create(&_thread, NULL, threadEntry, this) != 0) {
-        close(_pipefd[1]);
-        close(_pipefd[0]);
         return Error("Unable to create timer thread");
     }
 
@@ -68,26 +77,24 @@ Error WallClock::start(Arguments& args) {
 }
 
 void WallClock::stop() {
-    char val = 1;
-    ssize_t r = write(_pipefd[1], &val, sizeof(val));
-    (void)r;
-
-    close(_pipefd[1]);
+    _running = false;
+    pthread_kill(_thread, WAKEUP_SIGNAL);
     pthread_join(_thread, NULL);
-    close(_pipefd[0]);
 }
 
 void WallClock::timerLoop() {
-    ThreadList* thread_list = NULL;
-
     int self = OS::threadId();
-    ThreadFilter* thread_filter = Profiler::_instance.filter();
+    ThreadFilter* thread_filter = Profiler::_instance.threadFilter();
+    bool thread_filter_enabled = thread_filter->enabled();
     bool sample_idle_threads = _sample_idle_threads;
 
-    struct pollfd fds = {_pipefd[0], POLLIN, 0};
-    int timeout = _interval > 1000000 ? (int)(_interval / 1000000) : 1;
+    struct timespec timeout;
+    timeout.tv_sec = _interval / 1000000000;
+    timeout.tv_nsec = _interval % 1000000000;
 
-    while (poll(&fds, 1, timeout) == 0) {
+    ThreadList* thread_list = NULL;
+
+    while (_running) {
         if (thread_list == NULL) {
             thread_list = OS::listThreads();
         }
@@ -100,7 +107,7 @@ void WallClock::timerLoop() {
                 break;
             }
 
-            if (thread_id == self || !(thread_filter == NULL || thread_filter->accept(thread_id))) {
+            if (thread_id == self || (thread_filter_enabled && !thread_filter->accept(thread_id))) {
                 continue;
             }
 
@@ -111,6 +118,8 @@ void WallClock::timerLoop() {
                 if (OS::sendSignalToThread(thread_id, SIGVTALRM)) count++;
             }
         }
+
+        nanosleep(&timeout, NULL);
     }
 
     delete thread_list;

@@ -24,15 +24,22 @@ ThreadFilter::ThreadFilter() {
     _enabled = false;
 }
 
+ThreadFilter::~ThreadFilter() {
+    for (int i = 0; i < MAX_BITMAPS; i++) {
+        free(_bitmap[i]);
+    }
+}
+
 void ThreadFilter::init(const char* filter) {
+    _enabled = filter != NULL;
+}
+
+void ThreadFilter::clear() {
     for (int i = 0; i < MAX_BITMAPS; i++) {
         if (_bitmap[i] != NULL) {
-            free(_bitmap[i]);
-            _bitmap[i] = NULL;
+            memset(_bitmap[i], 0, BITMAP_SIZE);
         }
     }
-
-    _enabled = filter != NULL;
 }
 
 bool ThreadFilter::accept(int thread_id) {

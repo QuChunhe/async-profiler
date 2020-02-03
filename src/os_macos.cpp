@@ -74,6 +74,10 @@ u64 OS::ntoh64(u64 x) {
     return OSSwapBigToHostInt64(x);
 }
 
+int OS::getMaxThreadId() {
+    return 0x7fffffff;
+}
+
 int OS::threadId() {
     // Used to be pthread_mach_thread_np(pthread_self()),
     // but pthread_mach_thread_np is not async signal safe
@@ -99,11 +103,17 @@ bool OS::isJavaLibraryVisible() {
     return true;
 }
 
-void OS::installSignalHandler(int signo, void (*handler)(int, siginfo_t*, void*)) {
+void OS::installSignalHandler(int signo, SigAction action, SigHandler handler) {
     struct sigaction sa;
     sigemptyset(&sa.sa_mask);
-    sa.sa_sigaction = handler;
-    sa.sa_flags = SA_RESTART | SA_SIGINFO;
+
+    if (handler != NULL) {
+        sa.sa_handler = handler;
+        sa.sa_flags = 0;
+    } else {
+        sa.sa_sigaction = action;
+        sa.sa_flags = SA_SIGINFO | SA_RESTART;
+    }
 
     sigaction(signo, &sa, NULL);
 }

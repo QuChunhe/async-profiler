@@ -167,6 +167,19 @@ void Profiler::addRuntimeStub(const void* address, int length, const char* name)
     _stubs_lock.unlock();
 }
 
+void Profiler::onThreadStart(jvmtiEnv* jvmti, JNIEnv* jni, jthread thread) {
+    int tid = OS::threadId();
+    updateThreadName(jvmti, jni, thread);
+    _engine->onThreadStart(tid);
+}
+
+void Profiler::onThreadEnd(jvmtiEnv* jvmti, JNIEnv* jni, jthread thread) {
+    int tid = OS::threadId();
+    _thread_filter.remove(tid);
+    updateThreadName(jvmti, jni, thread);
+    _engine->onThreadEnd(tid);
+}
+
 const char* Profiler::asgctError(int code) {
     switch (code) {
         case ticks_no_Java_frame:
@@ -666,6 +679,9 @@ Error Profiler::start(Arguments& args, bool reset) {
         // Reset frame buffer
         _frame_buffer_index = 0;
         _frame_buffer_overflow = false;
+
+        // Reset thread filter bitmaps
+        _thread_filter.clear();
 
         // Reset thread names
         MutexLocker ml(_thread_names_lock);

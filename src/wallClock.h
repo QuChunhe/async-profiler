@@ -28,7 +28,7 @@ class WallClock : public Engine {
     static long _interval;
     static bool _sample_idle_threads;
 
-    int _pipefd[2];
+    volatile bool _running;
     pthread_t _thread;
 
     void timerLoop();
@@ -39,6 +39,7 @@ class WallClock : public Engine {
     }
 
     static void signalHandler(int signo, siginfo_t* siginfo, void* ucontext);
+    static void wakeupHandler(int signo);
 
   public:
     const char* name() {

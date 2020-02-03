@@ -36,16 +36,21 @@ class ThreadList {
 
 
 class OS {
+  private:
+    typedef void (*SigAction)(int, siginfo_t*, void*);
+    typedef void (*SigHandler)(int);
+
   public:
     static u64 nanotime();
     static u64 millis();
     static u64 hton64(u64 x);
     static u64 ntoh64(u64 x);
+    static int getMaxThreadId();
     static int threadId();
     static ThreadState threadState(int thread_id);
     static bool isSignalSafeTLS();
     static bool isJavaLibraryVisible();
-    static void installSignalHandler(int signo, void (*handler)(int, siginfo_t*, void*));
+    static void installSignalHandler(int signo, SigAction action, SigHandler handler = NULL);
     static bool sendSignalToThread(int thread_id, int signo);
     static ThreadList* listThreads();
 };

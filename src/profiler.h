@@ -33,7 +33,7 @@
 
 const char FULL_VERSION_STRING[] =
     "Async-profiler " PROFILER_VERSION " built on " __DATE__ "\n"
-    "Copyright 2019 Andrei Pangin\n";
+    "Copyright 2016-2020 Andrei Pangin\n";
 
 const int MAX_CALLTRACES    = 65536;
 const int MAX_NATIVE_FRAMES = 128;
@@ -150,6 +150,9 @@ class Profiler {
     void removeJavaMethod(const void* address, jmethodID method);
     void addRuntimeStub(const void* address, int length, const char* name);
 
+    void onThreadStart(jvmtiEnv* jvmti, JNIEnv* jni, jthread thread);
+    void onThreadEnd(jvmtiEnv* jvmti, JNIEnv* jni, jthread thread);
+
     const char* asgctError(int code);
     NativeCodeCache* findNativeLibrary(const void* address);
     const char* findNativeMethod(const void* address);
@@ -199,11 +202,9 @@ class Profiler {
     u64 total_counter() { return _total_counter; }
     time_t uptime()     { return time(NULL) - _start_time; }
 
-    NativeCodeCache* jvmLibrary() { return _libjvm; }
+    ThreadFilter* threadFilter() { return &_thread_filter; }
 
-    ThreadFilter* filter() {
-        return _thread_filter.enabled() ? &_thread_filter : NULL;
-    }
+    NativeCodeCache* jvmLibrary() { return _libjvm; }
 
     void run(Arguments& args);
     void runInternal(Arguments& args, std::ostream& out);
@@ -238,13 +239,11 @@ class Profiler {
     }
 
     static void JNICALL ThreadStart(jvmtiEnv* jvmti, JNIEnv* jni, jthread thread) {
-        _instance.updateThreadName(jvmti, jni, thread);
-        _instance._engine->onThreadStart();
+        _instance.onThreadStart(jvmti, jni, thread);
     }
 
     static void JNICALL ThreadEnd(jvmtiEnv* jvmti, JNIEnv* jni, jthread thread) {
-        _instance.updateThreadName(jvmti, jni, thread);
-        _instance._engine->onThreadEnd();
+        _instance.onThreadEnd(jvmti, jni, thread);
     }
 
     friend class Recording;

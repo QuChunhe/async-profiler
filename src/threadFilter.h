@@ -47,12 +47,14 @@ class ThreadFilter {
 
   public:
     ThreadFilter();
+    ~ThreadFilter();
 
     bool enabled() {
         return _enabled;
     }
 
     void init(const char* filter);
+    void clear();
 
     bool accept(int thread_id);
     void add(int thread_id);

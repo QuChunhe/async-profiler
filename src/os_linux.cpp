@@ -81,6 +81,17 @@ u64 OS::ntoh64(u64 x) {
     return ntohl(1) == 1 ? x : bswap_64(x);
 }
 
+int OS::getMaxThreadId() {
+    char buf[16] = "65536";
+    int fd = open("/proc/sys/kernel/pid_max", O_RDONLY);
+    if (fd != -1) {
+        ssize_t r = read(fd, buf, sizeof(buf) - 1);
+        (void) r;
+        close(fd);
+    }
+    return atoi(buf);
+}
+
 int OS::threadId() {
     return syscall(__NR_gettid);
 }
@@ -111,11 +122,17 @@ bool OS::isJavaLibraryVisible() {
     return false;
 }
 
-void OS::installSignalHandler(int signo, void (*handler)(int, siginfo_t*, void*)) {
+void OS::installSignalHandler(int signo, SigAction action, SigHandler handler) {
     struct sigaction sa;
     sigemptyset(&sa.sa_mask);
-    sa.sa_sigaction = handler;
-    sa.sa_flags = SA_RESTART | SA_SIGINFO;
+
+    if (handler != NULL) {
+        sa.sa_handler = handler;
+        sa.sa_flags = 0;
+    } else {
+        sa.sa_sigaction = action;
+        sa.sa_flags = SA_SIGINFO | SA_RESTART;
+    }
 
     sigaction(signo, &sa, NULL);
 }
