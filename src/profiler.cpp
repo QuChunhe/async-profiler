@@ -169,6 +169,7 @@ void Profiler::addRuntimeStub(const void* address, int length, const char* name)
 
 void Profiler::onThreadStart(jvmtiEnv* jvmti, JNIEnv* jni, jthread thread) {
     int tid = OS::threadId();
+    _thread_filter.remove(tid);
     updateThreadName(jvmti, jni, thread);
     _engine->onThreadStart(tid);
 }
@@ -738,11 +739,8 @@ Error Profiler::start(Arguments& args, bool reset) {
         return error;
     }
 
-    if (_threads) {
-        // Thread events might be already enabled by PerfEvents::start
-        switchThreadEvents(JVMTI_ENABLE);
-    }
-
+    // Thread events might be already enabled by PerfEvents::start
+    switchThreadEvents(JVMTI_ENABLE);
     switchNativeMethodTraps(true);
 
     _state = RUNNING;
