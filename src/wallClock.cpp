@@ -32,6 +32,10 @@
 // to avoid contention on a spin lock inside Profiler::recordSample().
 const int THREADS_PER_TICK = 8;
 
+// Set the hard limit for thread walking interval to 100 microseconds.
+// Smaller intervals are practically unusable due to large overhead.
+const long MIN_INTERVAL = 100000;
+
 // Stop profiling thread with this signal. The same signal is used inside JDK to interrupt I/O operations.
 const int WAKEUP_SIGNAL = SIGIO;
 
@@ -56,12 +60,30 @@ void WallClock::wakeupHandler(int signo) {
     // Dummy handler for interrupting syscalls
 }
 
+long WallClock::adjustInterval(long interval, int thread_count) {
+    if (thread_count > THREADS_PER_TICK) {
+        interval /= (thread_count + THREADS_PER_TICK - 1) / THREADS_PER_TICK;
+    }
+    return interval;
+}
+
+void WallClock::sleep(long interval) {
+    struct timespec timeout;
+    timeout.tv_sec = interval / 1000000000;
+    timeout.tv_nsec = interval % 1000000000;
+
+    nanosleep(&timeout, NULL);
+}
+
 Error WallClock::start(Arguments& args) {
     if (args._interval < 0) {
         return Error("interval must be positive");
     }
-    _interval = args._interval ? args._interval : DEFAULT_INTERVAL;
+
     _sample_idle_threads = strcmp(args._event, EVENT_WALL) == 0;
+
+    // Increase default interval for wall clock mode due to larger number of sampled threads
+    _interval = args._interval ? args._interval : (_sample_idle_threads ? DEFAULT_INTERVAL * 5 : DEFAULT_INTERVAL);
 
     OS::installSignalHandler(SIGVTALRM, signalHandler);
     OS::installSignalHandler(SIGPROF, signalHandler);
@@ -88,22 +110,20 @@ void WallClock::timerLoop() {
     bool thread_filter_enabled = thread_filter->enabled();
     bool sample_idle_threads = _sample_idle_threads;
 
-    struct timespec timeout;
-    timeout.tv_sec = _interval / 1000000000;
-    timeout.tv_nsec = _interval % 1000000000;
-
-    ThreadList* thread_list = NULL;
+    ThreadList* thread_list = OS::listThreads();
+    long long next_cycle_time = OS::nanotime();
 
     while (_running) {
-        if (thread_list == NULL) {
-            thread_list = OS::listThreads();
+        if (sample_idle_threads) {
+            // Try to keep the wall clock interval stable, regardless of the number of profiled threads
+            int estimated_thread_count = thread_filter_enabled ? thread_filter->size() : thread_list->size();
+            next_cycle_time += adjustInterval(_interval, estimated_thread_count);
         }
 
         for (int count = 0; count < THREADS_PER_TICK; ) {
             int thread_id = thread_list->next();
             if (thread_id == -1) {
-                delete thread_list;
-                thread_list = NULL;
+                thread_list->rewind();
                 break;
             }
 
@@ -119,7 +139,17 @@ void WallClock::timerLoop() {
             }
         }
 
-        nanosleep(&timeout, NULL);
+        if (sample_idle_threads) {
+            long long current_time = OS::nanotime();
+            if (next_cycle_time - current_time > MIN_INTERVAL) {
+                sleep(next_cycle_time - current_time);
+            } else {
+                next_cycle_time = current_time + MIN_INTERVAL;
+                sleep(MIN_INTERVAL);
+            }
+        } else {
+            sleep(_interval);
+        }
     }
 
     delete thread_list;

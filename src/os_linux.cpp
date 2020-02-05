@@ -35,16 +35,46 @@
 class LinuxThreadList : public ThreadList {
   private:
     DIR* _dir;
+    int _thread_count;
+
+    int getThreadCount() {
+        char buf[512];
+        int fd = open("/proc/self/stat", O_RDONLY);
+        if (fd == -1) {
+            return 0;
+        }
+
+        int thread_count = 0;
+        if (read(fd, buf, sizeof(buf)) > 0) {
+            char* s = strchr(buf, ')');
+            if (s != NULL) {
+                // Read 18th integer field after the command name
+                for (int field = 0; *s != ' ' || ++field < 18; s++) ;
+                thread_count = atoi(s + 1);
+            }
+        }
+
+        close(fd);
+        return thread_count;
+    }
 
   public:
     LinuxThreadList() {
         _dir = opendir("/proc/self/task");
+        _thread_count = -1;
     }
 
     ~LinuxThreadList() {
         if (_dir != NULL) {
             closedir(_dir);
         }
+    }
+
+    void rewind() {
+        if (_dir != NULL) {
+            rewinddir(_dir);
+        }
+        _thread_count = -1;
     }
 
     int next() {
@@ -57,6 +87,13 @@ class LinuxThreadList : public ThreadList {
             }
         }
         return -1;
+    }
+
+    int size() {
+        if (_thread_count < 0) {
+            _thread_count = getThreadCount();
+        }
+        return _thread_count;
     }
 };
 

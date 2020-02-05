@@ -36,6 +36,7 @@ class ThreadFilter {
     u32* _bitmap[MAX_BITMAPS];
     Mutex _lock;
     bool _enabled;
+    volatile int _size;
 
     u32* bitmap(int thread_id) {
         return _bitmap[(u32)thread_id / BITMAP_CAPACITY];
@@ -51,6 +52,10 @@ class ThreadFilter {
 
     bool enabled() {
         return _enabled;
+    }
+
+    int size() {
+        return _size;
     }
 
     void init(const char* filter);

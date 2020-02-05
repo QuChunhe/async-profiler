@@ -31,7 +31,9 @@ enum ThreadState {
 class ThreadList {
   public:
     virtual ~ThreadList() {}
+    virtual void rewind() = 0;
     virtual int next() = 0;
+    virtual int size() = 0;
 };
 
 

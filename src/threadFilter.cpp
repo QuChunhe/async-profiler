@@ -22,6 +22,7 @@
 ThreadFilter::ThreadFilter() {
     memset(_bitmap, 0, sizeof(_bitmap));
     _enabled = false;
+    _size = 0;
 }
 
 ThreadFilter::~ThreadFilter() {
@@ -40,6 +41,7 @@ void ThreadFilter::clear() {
             memset(_bitmap[i], 0, BITMAP_SIZE);
         }
     }
+    _size = 0;
 }
 
 bool ThreadFilter::accept(int thread_id) {
@@ -57,12 +59,21 @@ void ThreadFilter::add(int thread_id) {
             _bitmap[(u32)thread_id / BITMAP_CAPACITY] = b;
         }
     }
-    __sync_or_and_fetch(&word(b, thread_id), 1 << (thread_id & 0x1f));
+
+    u32 bit = 1 << (thread_id & 0x1f);
+    if (!(__sync_fetch_and_or(&word(b, thread_id), bit) & bit)) {
+        atomicInc(_size);
+    }
 }
 
 void ThreadFilter::remove(int thread_id) {
     u32* b = bitmap(thread_id);
-    if (b != NULL) {
-        __sync_and_and_fetch(&word(b, thread_id), ~(1 << (thread_id & 0x1f)));
+    if (b == NULL) {
+        return;
+    }
+
+    u32 bit = 1 << (thread_id & 0x1f);
+    if (__sync_fetch_and_and(&word(b, thread_id), ~bit) & bit) {
+        atomicInc(_size, -1);
     }
 }
