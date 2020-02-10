@@ -21,6 +21,7 @@
 #include <signal.h>
 #include <pthread.h>
 #include "engine.h"
+#include "os.h"
 
 
 class WallClock : public Engine {
@@ -38,6 +39,7 @@ class WallClock : public Engine {
         return NULL;
     }
 
+    static ThreadState getThreadState(void* ucontext);
     static void signalHandler(int signo, siginfo_t* siginfo, void* ucontext);
     static void wakeupHandler(int signo);
 

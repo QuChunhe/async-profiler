@@ -154,8 +154,6 @@ class Profiler {
     void onThreadEnd(jvmtiEnv* jvmti, JNIEnv* jni, jthread thread);
 
     const char* asgctError(int code);
-    NativeCodeCache* findNativeLibrary(const void* address);
-    const char* findNativeMethod(const void* address);
     int getNativeTrace(void* ucontext, ASGCT_CallFrame* frames, int tid, bool* stopped_at_java_frame);
     int getJavaTraceAsync(void* ucontext, ASGCT_CallFrame* frames, int max_depth);
     int getJavaTraceJvmti(jvmtiFrameInfo* jvmti_frames, ASGCT_CallFrame* frames, int max_depth);
@@ -218,7 +216,10 @@ class Profiler {
     void dumpTraces(std::ostream& out, Arguments& args);
     void dumpFlat(std::ostream& out, Arguments& args);
     void recordSample(void* ucontext, u64 counter, jint event_type, jmethodID event);
+
     const void* findSymbol(const char* name);
+    NativeCodeCache* findNativeLibrary(const void* address);
+    const char* findNativeMethod(const void* address);
 
     // CompiledMethodLoad is also needed to enable DebugNonSafepoints info by default
     static void JNICALL CompiledMethodLoad(jvmtiEnv* jvmti, jmethodID method,

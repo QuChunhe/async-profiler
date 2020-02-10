@@ -14,14 +14,12 @@
  * limitations under the License.
  */
 
-#include <errno.h>
 #include <signal.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include "wallClock.h"
-#include "os.h"
 #include "profiler.h"
 #include "stackFrame.h"
 
@@ -43,16 +41,29 @@ const int WAKEUP_SIGNAL = SIGIO;
 long WallClock::_interval;
 bool WallClock::_sample_idle_threads;
 
-void WallClock::signalHandler(int signo, siginfo_t* siginfo, void* ucontext) {
-#ifdef __linux__
-    // Workaround for JDK-8237858: restart the interrupted syscall manually.
-    // Currently this is implemented only for poll().
+ThreadState WallClock::getThreadState(void* ucontext) {
     StackFrame frame(ucontext);
-    if (frame.retval() == (uintptr_t)-EINTR) {
-        frame.restartSyscall();
-    }
-#endif // __linux__
+    uintptr_t pc = frame.pc();
 
+    // Consider a thread sleeping, if it has been interrupted in the middle of syscall execution,
+    // either when PC points to the syscall instruction, or if syscall has just returned with EINTR
+    if (StackFrame::isSyscall((instruction_t*)pc)) {
+        return THREAD_SLEEPING;
+    }
+
+    // Make sure the previous instruction address is readable
+    uintptr_t prev_pc = pc - SYSCALL_SIZE;
+    if ((pc & 0xfff) >= SYSCALL_SIZE || Profiler::_instance.findNativeLibrary((instruction_t*)prev_pc) != NULL) {
+        if (StackFrame::isSyscall((instruction_t*)prev_pc) && frame.checkInterruptedSyscall()) {
+            return THREAD_SLEEPING;
+        }
+    }
+
+    return THREAD_RUNNING;
+}
+
+void WallClock::signalHandler(int signo, siginfo_t* siginfo, void* ucontext) {
+    ThreadState state = getThreadState(ucontext);  // TODO
     Profiler::_instance.recordSample(ucontext, _interval, 0, NULL);
 }
 
@@ -85,7 +96,6 @@ Error WallClock::start(Arguments& args) {
     // Increase default interval for wall clock mode due to larger number of sampled threads
     _interval = args._interval ? args._interval : (_sample_idle_threads ? DEFAULT_INTERVAL * 5 : DEFAULT_INTERVAL);
 
-    OS::installSignalHandler(SIGVTALRM, signalHandler);
     OS::installSignalHandler(SIGPROF, signalHandler);
     OS::installSignalHandler(WAKEUP_SIGNAL, NULL, wakeupHandler);
 
@@ -131,11 +141,10 @@ void WallClock::timerLoop() {
                 continue;
             }
 
-            ThreadState state = OS::threadState(thread_id);
-            if (state == THREAD_RUNNING) {
-                if (OS::sendSignalToThread(thread_id, SIGPROF)) count++;
-            } else if (state == THREAD_SLEEPING && sample_idle_threads) {
-                if (OS::sendSignalToThread(thread_id, SIGVTALRM)) count++;
+            if (sample_idle_threads || OS::threadState(thread_id) == THREAD_RUNNING) {
+                if (OS::sendSignalToThread(thread_id, SIGPROF)) {
+                    count++;
+                }
             }
         }
 
