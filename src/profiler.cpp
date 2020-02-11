@@ -446,7 +446,7 @@ bool Profiler::addressInCode(instruction_t* pc) {
     return false;
 }
 
-void Profiler::recordSample(void* ucontext, u64 counter, jint event_type, jmethodID event) {
+void Profiler::recordSample(void* ucontext, u64 counter, jint event_type, jmethodID event, ThreadState thread_state) {
     int tid = OS::threadId();
 
     u64 lock_index = atomicInc(_total_samples) % CONCURRENCY_LEVEL;
@@ -496,7 +496,7 @@ void Profiler::recordSample(void* ucontext, u64 counter, jint event_type, jmetho
 
     storeMethod(frames[0].method_id, frames[0].bci, counter);
     int call_trace_id = storeCallTrace(num_frames, frames, counter);
-    _jfr.recordExecutionSample(lock_index, tid, call_trace_id);
+    _jfr.recordExecutionSample(lock_index, tid, call_trace_id, thread_state);
 
     _locks[lock_index].unlock();
 }
